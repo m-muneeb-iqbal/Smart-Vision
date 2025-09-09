@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter/services.dart';
 import 'dart:io';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -17,23 +16,24 @@ class _HomeScreenState extends State<HomeScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   late stt.SpeechToText _speech;
   bool _commandExecuted = false;
+  bool _isCommandMode = false; // ✅ NEW FLAG
 
   @override
   void initState() {
     super.initState();
     _speech = stt.SpeechToText();
-    _initSpeech();
+    Future.delayed(const Duration(milliseconds: 3000), () {
+      _initSpeech();
+    });
   }
 
   Future<void> _initSpeech() async {
     bool available = await _speech.initialize(
       onStatus: (status) {
-        if (status == 'done' || status == 'notListening') {
-          _startListening();
+        debugPrint("Speech status: $status");
+        if (status == 'notListening') {
+          Future.delayed(const Duration(milliseconds: 500), _startListening);
         }
-      },
-      onError: (error) {
-        debugPrint("Speech error: $error");
       },
     );
     if (available) {
@@ -42,27 +42,63 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _startListening() {
-    _speech.listen(
-      onResult: (val) {
-        String command = val.recognizedWords.toLowerCase().trim();
-        debugPrint("Recognized Command: $command");
-        _handleCommand(command);
-      },
-      listenMode: stt.ListenMode.confirmation,
-      localeId: "en_IN", // Or "en_US"
-    );
+    if (!_speech.isListening) { // ✅ prevent overlap
+      _speech.listen(
+        onResult: (val) {
+          String spoken = val.recognizedWords.toLowerCase().trim();
+          debugPrint("Recognized: $spoken");
+          _processSpeech(spoken);
+        },
+        listenMode: stt.ListenMode.confirmation,
+        localeId: "en_IN", // Or "en_US"
+      );
+    }
+  }
+
+  void _stopListening() async {
+    if (_speech.isListening) {
+      await _speech.stop();
+      debugPrint("🎤 Stopped listening");
+    }
+  }
+
+  void _processSpeech(String text) {
+    if (text.isEmpty) return;
+
+    // Handle start/stop listening
+    if (text.contains("listening") || text.contains("hey vision")) {
+      if (!_isCommandMode) {
+        _isCommandMode = true;
+        debugPrint("🔊 Command mode activated!");
+      }
+      return;
+    } if (text.contains("stop hearing") || text.contains("exit listening")) {
+      if (_isCommandMode) {
+        _isCommandMode = false;
+        debugPrint("🛑 Command mode deactivated!$text");
+        _stopListening();
+      }
+      return;
+    }
+
+    // If not in command mode → ignore
+    if (!_isCommandMode) return;
+
+    // Handle actual commands
+
+    _handleCommand(text);
   }
 
   void _handleCommand(String command) {
     if (_commandExecuted || command.isEmpty) return;
 
-    // Prioritized command handling
     if (command.contains("object detection") ||
         command.contains("detect object") ||
+        command.contains("detect") ||
         command.contains("object")) {
       _navigateTo('/object-detect');
     } else if (command.contains("read text") ||
-        command.contains("text") ||
+        command.contains("read") ||
         command.contains("text")) {
       _navigateTo('/read-text');
     } else if (command.contains("how to use") ||
@@ -81,8 +117,7 @@ class _HomeScreenState extends State<HomeScreen> {
         exit(0);
       }
     } else {
-      // No valid command detected, restart listening
-      debugPrint("Unrecognized or invalid command: $command");
+      debugPrint("Unrecognized command in command mode: $command");
       _speech.stop();
       Future.delayed(const Duration(milliseconds: 500), _startListening);
     }
@@ -114,17 +149,19 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             GestureDetector(
               child: UserAccountsDrawerHeader(
-                accountName: Text("User Name", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                accountEmail: Text("user@example.com", style: TextStyle(fontSize: 14)),
-                currentAccountPicture: CircleAvatar(
+                accountName: const Text("User Name",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                accountEmail: const Text("user@example.com",
+                    style: TextStyle(fontSize: 14)),
+                currentAccountPicture: const CircleAvatar(
                   backgroundColor: Colors.white,
                   child: Icon(Icons.person, size: 40, color: Color(0xFF00695C)),
                 ),
-                decoration: BoxDecoration(color: Color(0xFF00695C)),
+                decoration: const BoxDecoration(color: Color(0xFF00695C)),
               ),
               onTap: () => Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => HomeScreen()),
+                MaterialPageRoute(builder: (context) => const HomeScreen()),
               ),
             ),
             Expanded(
@@ -133,22 +170,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   children: [
                     ListTile(
-                      leading: Icon(
-                        Icons.logout, 
-                        color: Colors.black
-                      ),
-                      title: Text(
-                        "Logout", 
-                        style: TextStyle(
-                          color: Colors.black, 
-                          fontSize: 18
-                        )
-                      ),
-                      onTap: () => logout()
-                    ),
+                        leading: const Icon(Icons.logout, color: Colors.black),
+                        title: const Text("Logout",
+                            style: TextStyle(
+                                color: Colors.black, fontSize: 18)),
+                        onTap: () => logout()),
                   ],
                 ),
-              )
+              ),
             )
           ],
         ),
@@ -161,9 +190,9 @@ class _HomeScreenState extends State<HomeScreen> {
             begin: Alignment.topRight,
             end: Alignment.bottomCenter,
             colors: [
-              Color(0xFF00695C), // Darker shade
-              Color(0xFF26A69A), // Primary theme color
-              Color(0xFFB2DFDB), // Lighter shade
+              Color(0xFF00695C),
+              Color(0xFF26A69A),
+              Color(0xFFB2DFDB),
             ],
           ),
         ),
@@ -178,21 +207,18 @@ class _HomeScreenState extends State<HomeScreen> {
                     IconButton(
                       onPressed: () {
                         _scaffoldKey.currentState?.openDrawer();
-                      }, 
+                      },
                       icon: const Icon(Icons.menu),
                       iconSize: 30,
                       color: Colors.white,
                     ),
-                    Text(
-                      "Smart Vision",
-                      style: TextStyle(
-                        fontSize: 30,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white
-                      )
-                    ),
+                    const Text("Smart Vision",
+                        style: TextStyle(
+                            fontSize: 30,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white)),
                     IconButton(
-                      onPressed: () {}, 
+                      onPressed: () {},
                       icon: const Icon(Icons.settings),
                       color: Colors.white,
                       iconSize: 30,
@@ -203,10 +229,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const Center(
                   child: Column(
                     children: [
-                      CircleAvatar(
-                        radius: 50,
-                        backgroundImage: AssetImage('assets/images.png'),
-                      ),
+                      CircleAvatar(radius: 50),
                       SizedBox(height: 16),
                       Text(
                         "Welcome to Smart Vision",
@@ -229,108 +252,31 @@ class _HomeScreenState extends State<HomeScreen> {
                 Expanded(
                   child: ListView(
                     children: [
-                      GestureDetector(
-                        onTap: () => _navigateTo('/object-detect'),
-                        child: Container(
-                          height: 60,
-                          decoration: BoxDecoration(
-                            color: Color(0xFF00695C),
-                            borderRadius: BorderRadius.circular(8)
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.remove_red_eye, color: Colors.white,),
-                              const SizedBox(width: 10),
-                              Text(
-                                "Object Detection",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold
-                                ),
-                              )
-                            ],
-                          ),
-                        ),
-                      ),
+                      _buildMenuButton(
+                          icon: Icons.remove_red_eye,
+                          text: "Object Detection",
+                          onTap: () => _navigateTo('/object-detect')),
                       const SizedBox(height: 10),
-                      GestureDetector(
-                        onTap: () => _navigateTo('/read-text'),
-                        child: Container(
-                          height: 60,
-                          decoration: BoxDecoration(
-                            color: Color(0xFF00695C),
-                            borderRadius: BorderRadius.circular(8)
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.text_snippet, color: Colors.white,),
-                              const SizedBox(width: 10),
-                              Text(
-                                "Read the Text",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold
-                                ),
-                              )
-                            ],
-                          ),
-                        ),
-                      ),
+                      _buildMenuButton(
+                          icon: Icons.text_snippet,
+                          text: "Read the Text",
+                          onTap: () => _navigateTo('/read-text')),
                       const SizedBox(height: 10),
-                      GestureDetector(
-                        child: Container(
-                          height: 60,
-                          decoration: BoxDecoration(
-                            color: Color(0xFF00695C),
-                            borderRadius: BorderRadius.circular(8)
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.logout, color: Colors.white,),
-                              const SizedBox(width: 10),
-                              Text(
-                                "Exit Application",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold
-                                ),
-                              )
-                            ],
-                          ),
-                        ),
-                      ),
+                      _buildMenuButton(
+                          icon: Icons.logout,
+                          text: "Exit Application",
+                          onTap: () {
+                            if (Platform.isAndroid || Platform.isIOS) {
+                              SystemNavigator.pop();
+                            } else {
+                              exit(0);
+                            }
+                          }),
                       const SizedBox(height: 10),
-                      GestureDetector(
-                        onTap: () => _navigateTo('/how-to-use'),
-                        child: Container(
-                          height: 60,
-                          decoration: BoxDecoration(
-                            color: Color(0xFF00695C),
-                            borderRadius: BorderRadius.circular(8)
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.info_outline, color: Colors.white,),
-                              const SizedBox(width: 10),
-                              Text(
-                                "How to Use",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold
-                                ),
-                              )
-                            ],
-                          ),
-                        ),
-                      ),
+                      _buildMenuButton(
+                          icon: Icons.info_outline,
+                          text: "How to Use",
+                          onTap: () => _navigateTo('/how-to-use')),
                     ],
                   ),
                 ),
@@ -341,41 +287,29 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-}
 
-class CustomButton extends StatelessWidget {
-  final IconData icon;
-  final String text;
-  final VoidCallback onPressed;
-
-  const CustomButton({
-    super.key,
-    required this.icon,
-    required this.text,
-    required this.onPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 10),
-      child: ElevatedButton.icon(
-        icon: Icon(icon, size: 28),
-        label: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 18.0),
-          child: Text(
-            text,
-            style: const TextStyle(fontSize: 18),
-          ),
-        ),
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          minimumSize: const Size(double.infinity, 60),
-          backgroundColor: Colors.teal,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          elevation: 5,
+  Widget _buildMenuButton(
+      {required IconData icon,
+      required String text,
+      required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 60,
+        decoration: BoxDecoration(
+            color: const Color(0xFF00695C),
+            borderRadius: BorderRadius.circular(8)),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: Colors.white),
+            const SizedBox(width: 10),
+            Text(text,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold)),
+          ],
         ),
       ),
     );
