@@ -7,7 +7,7 @@ class HowToUseScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("📘 How to Use"),
+        title: const Text("Manual"),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           tooltip: "Back",

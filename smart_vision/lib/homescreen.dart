@@ -17,14 +17,53 @@ class _HomeScreenState extends State<HomeScreen> {
   late stt.SpeechToText _speech;
   bool _commandExecuted = false;
   bool _isCommandMode = false; // ✅ NEW FLAG
+  String? userId;
+  User? user = FirebaseAuth.instance.currentUser;
 
   @override
   void initState() {
     super.initState();
+    if (_checkIfAccountIsDeleted() == true) {
+      userId = user?.uid;
+      if (user != null) {
+        fetchNumericUserId(user!.uid);
+      }
+    }
     _speech = stt.SpeechToText();
     Future.delayed(const Duration(milliseconds: 3000), () {
       _initSpeech();
     });
+  }
+
+  Future<bool> _checkIfAccountIsDeleted() async {
+    try {
+      IdTokenResult? idTokenResult = await user?.getIdTokenResult(true);
+      if (idTokenResult == null || idTokenResult.token == null) {
+        FirebaseAuth.instance.signOut();
+        Navigator.pushReplacementNamed(context, '/login_screen');
+        return false;
+      } else {
+        return true;
+      }
+    } catch (er) {
+      FirebaseAuth.instance.signOut();
+      Navigator.pushReplacementNamed(context, '/login_screen');
+      return false;
+    }
+  }
+
+  Future<void> fetchNumericUserId(String firebaseUid) async {
+    // Find the user document with matching `id` field (Firebase UID)
+    QuerySnapshot snapshot = await FirebaseFirestore.instance
+        .collection('Users')
+        .where('id', isEqualTo: firebaseUid)
+        .get();
+
+    if (snapshot.docs.isNotEmpty) {
+      setState(() {
+        userId = snapshot.docs.first.id; // This is your numeric ID as string
+      });
+    }
   }
 
   Future<void> _initSpeech() async {
@@ -42,7 +81,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _startListening() {
-    if (!_speech.isListening) { // ✅ prevent overlap
+    if (!_speech.isListening) {
+      // ✅ prevent overlap
       _speech.listen(
         onResult: (val) {
           String spoken = val.recognizedWords.toLowerCase().trim();
@@ -72,7 +112,8 @@ class _HomeScreenState extends State<HomeScreen> {
         debugPrint("🔊 Command mode activated!");
       }
       return;
-    } if (text.contains("stop hearing") || text.contains("exit listening")) {
+    }
+    if (text.contains("stop hearing") || text.contains("exit listening")) {
       if (_isCommandMode) {
         _isCommandMode = false;
         debugPrint("🛑 Command mode deactivated!$text");
@@ -149,10 +190,18 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             GestureDetector(
               child: UserAccountsDrawerHeader(
-                accountName: const Text("User Name",
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                accountEmail: const Text("user@example.com",
-                    style: TextStyle(fontSize: 14)),
+                accountName: Text(
+                  user?.displayName ?? "User Name",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                accountEmail: Text(
+                  user?.email ?? "user@example.com",
+                  style: TextStyle(fontSize: 14),
+                ),
                 currentAccountPicture: const CircleAvatar(
                   backgroundColor: Colors.white,
                   child: Icon(Icons.person, size: 40, color: Color(0xFF00695C)),
@@ -170,15 +219,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   children: [
                     ListTile(
-                        leading: const Icon(Icons.logout, color: Colors.black),
-                        title: const Text("Logout",
-                            style: TextStyle(
-                                color: Colors.black, fontSize: 18)),
-                        onTap: () => logout()),
+                      leading: const Icon(Icons.logout, color: Colors.black),
+                      title: const Text(
+                        "Logout",
+                        style: TextStyle(color: Colors.black, fontSize: 18),
+                      ),
+                      onTap: () => logout(),
+                    ),
                   ],
                 ),
               ),
-            )
+            ),
           ],
         ),
       ),
@@ -189,11 +240,7 @@ class _HomeScreenState extends State<HomeScreen> {
           gradient: LinearGradient(
             begin: Alignment.topRight,
             end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF00695C),
-              Color(0xFF26A69A),
-              Color(0xFFB2DFDB),
-            ],
+            colors: [Color(0xFF00695C), Color(0xFF26A69A), Color(0xFFB2DFDB)],
           ),
         ),
         child: SafeArea(
@@ -204,79 +251,67 @@ class _HomeScreenState extends State<HomeScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    IconButton(
-                      onPressed: () {
-                        _scaffoldKey.currentState?.openDrawer();
-                      },
-                      icon: const Icon(Icons.menu),
-                      iconSize: 30,
-                      color: Colors.white,
-                    ),
-                    const Text("Smart Vision",
-                        style: TextStyle(
-                            fontSize: 30,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white)),
-                    IconButton(
-                      onPressed: () {},
-                      icon: const Icon(Icons.settings),
-                      color: Colors.white,
-                      iconSize: 30,
-                    )
-                  ],
-                ),
-                const SizedBox(height: 20),
-                const Center(
-                  child: Column(
-                    children: [
-                      CircleAvatar(radius: 50),
-                      SizedBox(height: 16),
-                      Text(
-                        "Welcome to Smart Vision",
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                    GestureDetector(
+                      child: CircleAvatar(
+                        radius: 15,
+                        backgroundColor: Colors.white,
+                        child: Icon(
+                          Icons.person,
+                          size: 18,
+                          color: Color(0xFF00695C),
                         ),
                       ),
-                      SizedBox(height: 10),
-                      Text(
-                        "Helping the visually impaired see the world.",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.white),
+                      onTap: () => {_scaffoldKey.currentState?.openDrawer()},
+                    ),
+                    const Text(
+                      "Smart Vision",
+                      style: TextStyle(
+                        fontSize: 30,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
                       ),
-                    ],
-                  ),
+                    ),
+                    GestureDetector(
+                      child: IconButton(
+                        onPressed: () {},
+                        icon: const Icon(Icons.notification_add),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 40),
+                const SizedBox(height: 200),
                 Expanded(
                   child: ListView(
                     children: [
                       _buildMenuButton(
-                          icon: Icons.remove_red_eye,
-                          text: "Object Detection",
-                          onTap: () => _navigateTo('/object-detect')),
+                        text: "Detect Object",
+                        icon: Icons.remove_red_eye,
+                        onTap: () => _navigateTo('/object-detect'),
+                      ),
                       const SizedBox(height: 10),
                       _buildMenuButton(
-                          icon: Icons.text_snippet,
-                          text: "Read the Text",
-                          onTap: () => _navigateTo('/read-text')),
+                        text: "Read Text",
+                        icon: Icons.text_snippet,
+                        onTap: () => _navigateTo('/read-text'),
+                      ),
                       const SizedBox(height: 10),
                       _buildMenuButton(
-                          icon: Icons.logout,
-                          text: "Exit Application",
-                          onTap: () {
-                            if (Platform.isAndroid || Platform.isIOS) {
-                              SystemNavigator.pop();
-                            } else {
-                              exit(0);
-                            }
-                          }),
+                        text: "Exit Application",
+                        icon: Icons.logout,
+                        onTap: () {
+                          if (Platform.isAndroid || Platform.isIOS) {
+                            SystemNavigator.pop();
+                          } else {
+                            exit(0);
+                          }
+                        },
+                      ),
                       const SizedBox(height: 10),
                       _buildMenuButton(
-                          icon: Icons.info_outline,
-                          text: "How to Use",
-                          onTap: () => _navigateTo('/how-to-use')),
+                        text: "Instructions",
+                        icon: Icons.info_outline,
+                        onTap: () => _navigateTo('/how-to-use'),
+                      ),
                     ],
                   ),
                 ),
@@ -288,27 +323,32 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildMenuButton(
-      {required IconData icon,
-      required String text,
-      required VoidCallback onTap}) {
+  Widget _buildMenuButton({
+    required IconData icon,
+    required String text,
+    required VoidCallback onTap,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
         height: 60,
         decoration: BoxDecoration(
-            color: const Color(0xFF00695C),
-            borderRadius: BorderRadius.circular(8)),
+          color: const Color(0xFF00695C),
+          borderRadius: BorderRadius.circular(8),
+        ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: Colors.white),
+            Text(
+              text,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             const SizedBox(width: 10),
-            Text(text,
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold)),
+            Icon(icon, color: Colors.white),
           ],
         ),
       ),
